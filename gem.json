@@ -1,0 +1,29 @@
+{
+    "gem_name": "LuaVSCode",
+    "display_name": "Lua VSCode",
+    "license": "MIT",
+    "license_url": "",
+    "origin": "Petrocket",
+    "origin_url": "",
+    "type": "Code",
+    "summary": "Lua debugger and library for VSCode",
+    "canonical_tags": [
+        "Gem"
+    ],
+    "user_tags": [
+        "Scripting",
+        "LUA",
+        "VSCode",
+        "LuaVSCode"
+    ],
+    "platforms": [
+        "Linux",
+        "Windows"
+    ],
+    "icon_path": ".",
+    "requirements": "",
+    "documentation_url": "",
+    "dependencies": [],
+    "repo_uri": "",
+    "restricted": "LuaVSCode"
+}

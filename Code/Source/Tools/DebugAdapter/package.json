@@ -1,0 +1,28 @@
+{
+    "name": "o3de-lua-debug-adapter",
+    "displayName": "O3DE LUA Debugger",
+    "description": "O3DE LUA Debugger",
+    "version": "1.0.0",
+    "preview": false,
+    "publisher": "O3DE",
+    "author": {
+        "name": "Alex Peterson"
+    },
+    "license": "SEE LICENSE IN LICENSE.txt",
+    "engines": {
+        "vscode": "^1.32.0"
+    },
+    "categories": [
+        "Debuggers"
+    ],
+    "contributes": {
+        "debuggers": [
+            {
+                "type": "o3de_lua_debugger",
+                "program": "@O3DE_VSCODE_PACKAGE_PROGRAM@",
+                "label": "o3de_lua_debugger",
+                "configurationAttributes": {}
+            }
+        ]
+    }
+}

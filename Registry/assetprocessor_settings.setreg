@@ -1,0 +1,18 @@
+{
+    "Amazon": {
+        "AssetProcessor": {
+            "Settings": {
+                "ScanFolder LuaVSCode/Assets": {
+                    "watch": "@GEMROOT:LuaVSCode@/Assets",
+                    "recursive": 1,
+                    "order": 101
+                },
+                "ScanFolder LuaVSCode/Registry": {
+                    "watch": "@GEMROOT:LuaVSCode@/Registry",
+                    "recursive": 1,
+                    "order": 102
+                }
+            }
+        }
+    }
+}
