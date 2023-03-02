@@ -48,7 +48,14 @@ namespace LUADebugger
     {
         auto settingsRegistry = AZ::SettingsRegistry::Get();
         settingsRegistry->Set("/Amazon/AzCore/Streamer/ReportHardware", false);
-        AzFramework::Application::StartCommon(systemEntity);
+
+        // handle our own version of AzFramework::Application::StartCommon(systemEntity);
+        // that doesn't init remote tools as a client - we're a host
+        m_pimpl.reset(Implementation::Create());
+
+        systemEntity->Init();
+        systemEntity->Activate();
+        AZ_Assert(systemEntity->GetState() == AZ::Entity::State::Active, "System Entity failed to activate.");
     }
 
     void LUADebugAdapterApplication::RunMainLoop()

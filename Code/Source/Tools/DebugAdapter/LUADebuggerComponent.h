@@ -104,6 +104,9 @@ namespace LUADebugger
         AzFramework::IRemoteTools* m_remoteTools = nullptr;
         std::unique_ptr<dap::Session> m_dapSession = nullptr;
         std::shared_ptr<dap::Writer> m_dapLog = nullptr;
+        AzFramework::RemoteToolsEndpointConnectedEvent::Handler m_connectedEventHandler;
+        AzFramework::RemoteToolsEndpointStatusEvent::Handler m_joinedEventHandler;
+        bool m_connected = false;
     };
 };
 

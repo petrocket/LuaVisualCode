@@ -65,7 +65,7 @@ namespace LUADebugger
 
     LUADebuggerComponent::LUADebuggerComponent()
     {
-        Sleep(10*1000);
+        //Sleep(10*1000);
         m_dapSession = dap::Session::create();
 
         const dap::integer threadId = 100;
@@ -333,7 +333,6 @@ namespace LUADebugger
 
         if (m_dapLog) {
             m_dapSession->bind(spy(in, m_dapLog), spy(out, m_dapLog));
-            //dap::writef(m_dapLog, "dap::Session binding\n");
         }
         else {
             m_dapSession->bind(in, out);
@@ -361,6 +360,8 @@ namespace LUADebugger
 
     void LUADebuggerComponent::GetRequiredServices([[maybe_unused]]AZ::ComponentDescriptor::DependencyArrayType& required)
     {
+        // we cannot list this as a required service because the system entity activates BEFORE the 
+        // the RemoteTools gem is loaded and RemoteToolsSystemComponent is added - suprise!
         //required.push_back(AZ_CRC_CE("RemoteToolsService"));
     }
 
@@ -393,6 +394,46 @@ namespace LUADebugger
         if (!m_remoteTools)
         {
             m_remoteTools = AzFramework::RemoteToolsInterface::Get();
+            if (m_remoteTools)
+            {
+                auto luaToolsKey = AzFramework::LuaToolsKey;
+                m_connectedEventHandler = AzFramework::RemoteToolsEndpointConnectedEvent::Handler(
+                    [this](bool value)
+                    {
+                        // we are connected!
+                        m_connected = value;
+                        this->EnumerateContexts();
+                    });
+                m_remoteTools->RegisterRemoteToolsEndpointConnectedHandler(luaToolsKey, m_connectedEventHandler);
+
+                m_joinedEventHandler = AzFramework::RemoteToolsEndpointStatusEvent::Handler(
+                    [&](AzFramework::RemoteToolsEndpointInfo joinedInfo)
+                    {
+                        if (m_connected)
+                        {
+                            return;
+                        }
+
+                        if (joinedInfo.IsSelf())
+                        {
+                            // Do not list the current application as a target
+                            return;
+                        }
+
+                        if (joinedInfo.IsOnline())
+                        {
+                            // for some reason the endpoint is not registered under the luaToolsKey but under the persistent id...
+                            //m_remoteTools->SetDesiredEndpoint(luaToolsKey, joinedInfo.GetPersistentId());
+                            m_remoteTools->SetDesiredEndpoint(joinedInfo.GetPersistentId(), joinedInfo.GetPersistentId());
+                        }
+                    });
+                m_remoteTools->RegisterRemoteToolsEndpointJoinedHandler(
+                    luaToolsKey, m_joinedEventHandler);
+
+                m_remoteTools->RegisterToolingServiceHost(
+                    luaToolsKey, AzFramework::LuaToolsName, AzFramework::LuaToolsPort);
+            }
+        
             return;
         }
 
