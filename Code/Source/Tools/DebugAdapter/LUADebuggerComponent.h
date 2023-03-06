@@ -107,6 +107,9 @@ namespace LUADebugger
         AzFramework::RemoteToolsEndpointConnectedEvent::Handler m_connectedEventHandler;
         AzFramework::RemoteToolsEndpointStatusEvent::Handler m_joinedEventHandler;
         bool m_connected = false;
+        bool m_attached = false;
+        bool m_dapInitialized = false;
+        AZStd::vector<AZStd::string> m_contextNames;
     };
 };
 

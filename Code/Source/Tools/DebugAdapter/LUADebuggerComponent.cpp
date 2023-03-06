@@ -103,15 +103,18 @@ namespace LUADebugger
         // https://microsoft.github.io/debug-adapter-protocol/specification#Events_Initialized
         m_dapSession->registerSentHandler(
             [&](const dap::ResponseOrError<dap::InitializeResponse>&) {
-                m_dapSession->send(dap::InitializedEvent());
-                if (m_dapLog)
+                AZ_TracePrintf("LUADebuggerComponent", "DAP is ready for initialized event");
+                // If the debugger is attached we can signal that we are done initializing 
+                // but usually the "AttachDebugger" ack will happen later and that is when
+                // we signal we are done initializing
+                m_dapInitialized = true;
+                if (m_attached)
                 {
-                    dap::writef(m_dapLog, "\ndap::Session initialized\n");
+                    m_dapSession->send(dap::InitializedEvent());
                 }
             });
 
         // The Threads request queries the debugger's list of active threads.
-        // This example debugger only exposes a single thread.
         // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Threads
         m_dapSession->registerHandler([&](const dap::ThreadsRequest&) {
             dap::ThreadsResponse response;
@@ -196,6 +199,7 @@ namespace LUADebugger
         // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Pause
         m_dapSession->registerHandler([&](const dap::PauseRequest&) {
             //debugger.pause();
+            // NOT SUPPORTED
             return dap::PauseResponse();
             });
 
@@ -233,23 +237,21 @@ namespace LUADebugger
 
         // The SetBreakpoints request instructs the debugger to clear and set a number
         // of line breakpoints for a specific source file.
-        // This example debugger only exposes a single source file.
         // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_SetBreakpoints
         m_dapSession->registerHandler([&](const dap::SetBreakpointsRequest& request) {
             dap::SetBreakpointsResponse response;
 
             auto breakpoints = request.breakpoints.value({});
-            if (request.source.sourceReference.value(0) == sourceReferenceId) {
                 //debugger.clearBreakpoints();
-                response.breakpoints.resize(breakpoints.size());
-                for (size_t i = 0; i < breakpoints.size(); i++) {
-                    //debugger.addBreakpoint(breakpoints[i].line);
-                    //response.breakpoints[i].verified = breakpoints[i].line < numSourceLines;
-                    response.breakpoints[i].verified = true;
-                }
-            }
-            else {
-                response.breakpoints.resize(breakpoints.size());
+
+            response.breakpoints.resize(breakpoints.size());
+            for (size_t i = 0; i < breakpoints.size(); i++) {
+                //debugger.addBreakpoint(breakpoints[i].line);
+                //response.breakpoints[i].verified = breakpoints[i].line < numSourceLines;
+                CreateBreakpoint(request.source.path.value().c_str(), static_cast<int>(breakpoints[i].line));
+                response.breakpoints[i].id = 0; // TODO assign a unique ID
+                //response.breakpoints[i].verified = breakpoints[i].line < numSourceLines;
+                response.breakpoints[i].verified = true;
             }
 
             return response;
@@ -400,9 +402,13 @@ namespace LUADebugger
                 m_connectedEventHandler = AzFramework::RemoteToolsEndpointConnectedEvent::Handler(
                     [this](bool value)
                     {
-                        // we are connected!
+                        // We are connected, but we must enumerate contexts and attach the debugger to 
+                        // a context before we can do anything useful like set breakpoints.
+                        // The editor will ignore all messages until we are attached to a context.
                         m_connected = value;
-                        this->EnumerateContexts();
+
+                        // First we enumerate contexts, and then we can attach to one
+                        EnumerateContexts();
                     });
                 m_remoteTools->RegisterRemoteToolsEndpointConnectedHandler(luaToolsKey, m_connectedEventHandler);
 
@@ -458,11 +464,16 @@ namespace LUADebugger
                     }
                     else if (ack->m_request == AZ_CRC_CE("AttachDebugger"))
                     {
-                        //LUAEditor::Context_DebuggerManagement::Bus::Broadcast(
-                        //    &LUAEditor::Context_DebuggerManagement::OnDebuggerAttached);
+                        m_attached = true;
+                        // debugger is attached, initialize dap if not already intialized 
+                        if(m_dapSession && m_dapInitialized)
+                        { 
+                            m_dapSession->send(dap::InitializedEvent());
+                        }
                     }
                     else if (ack->m_request == AZ_CRC_CE("DetachDebugger"))
                     {
+                        m_attached = false;
                         //LUAEditor::Context_DebuggerManagement::Bus::Broadcast(
                         //    &LUAEditor::Context_DebuggerManagement::OnDebuggerDetached);
                     }
@@ -515,6 +526,19 @@ namespace LUADebugger
                     //    &LUAEditor::Context_DebuggerManagement::OnBreakpointHit,
                     //    ackBreakpoint->m_moduleName,
                     //    ackBreakpoint->m_line);
+                    
+                    dap::ThreadEvent threadStartedEvent;
+                    dap::StoppedEvent stoppedEvent;
+                    stoppedEvent.reason = "breakpoint";
+                    stoppedEvent.description = "You look awesome";
+                    stoppedEvent.threadId = 100; // we just use one thread for now
+                    stoppedEvent.text = "Hit breakpoint";
+                    //stoppedEvent.hitBreakpointIds = dap::array<dap::integer>(0);
+                    //auto line = ackBreakpoint->m_line;
+                    //auto sourceName = ackBreakpoint->m_moduleName;
+                    stoppedEvent.hitBreakpointIds = {0}; // TODO store breakpoint IDs above
+
+                    m_dapSession->send(stoppedEvent);
                 }
                 else if (ackBreakpoint->m_id == AZ_CRC_CE("AddBreakpoint"))
                 {
@@ -550,10 +574,18 @@ namespace LUADebugger
             }
             else if (azrtti_istypeof<AzFramework::ScriptDebugEnumContextsResult*>(msg.get()))
             {
-                //AzFramework::ScriptDebugEnumContextsResult* enumContexts =
-                //    azdynamic_cast<AzFramework::ScriptDebugEnumContextsResult*>(msg.get());
+                AzFramework::ScriptDebugEnumContextsResult* enumContexts =
+                    azdynamic_cast<AzFramework::ScriptDebugEnumContextsResult*>(msg.get());
+                m_contextNames = enumContexts->m_names;
+                
+                if (!m_contextNames.empty())
+                {
+                    AttachDebugger(m_contextNames[0].c_str());
+                }
+
                 //LUAEditor::Context_DebuggerManagement::Bus::Broadcast(
                 //    &LUAEditor::Context_DebuggerManagement::OnReceivedAvailableContexts, enumContexts->m_names);
+
             }
             else if (azrtti_istypeof<AzFramework::ScriptDebugGetValueResult*>(msg.get()))
             {
@@ -679,14 +711,82 @@ namespace LUADebugger
         }
     }
 
+    AZ::IO::FixedMaxPath ScanUpRootLocator(AZ::IO::FixedMaxPath path, AZStd::string_view rootFileToLocate)
+    {
+        AZ::IO::FixedMaxPath rootCandidate{ path };
+
+        bool rootPathVisited = false;
+        do
+        {
+            if (AZ::IO::SystemFile::Exists((rootCandidate / rootFileToLocate).c_str()))
+            {
+                return rootCandidate;
+            }
+
+            // Note for posix filesystems the parent directory of '/' is '/' and for windows
+            // the parent directory of 'C:\\' is 'C:\\'
+
+            // Validate that the parent directory isn't itself, that would imply
+            // that it is the filesystem root path
+            AZ::IO::PathView parentPath = rootCandidate.ParentPath();
+            rootPathVisited = (rootCandidate == parentPath);
+            // Recurse upwards one directory
+            rootCandidate = AZStd::move(parentPath);
+
+        } while (!rootPathVisited);
+
+        return {};
+    }
+
+    AZStd::string GetRelativePath(const AZStd::string& absolutePath)
+    {
+        // First try the project
+        AZ::IO::FixedMaxPath filePath{ absolutePath };
+        AZStd::string relativePath = filePath.AsPosix().c_str();
+        auto root = ScanUpRootLocator(filePath, "project.json");
+        if (root.empty())
+        {
+            // try a gem 
+            root = ScanUpRootLocator(filePath, "gem.json");
+            if (!root.empty())
+            {
+                // should be in an Assets folder if in a gem
+                root /= "Assets";
+            }
+        }
+        if (root.empty())
+        {
+            root = ScanUpRootLocator(filePath, "engine.json");
+            
+            // could be Assets/Engine or Assets/Editor??
+            if (!root.empty())
+            {
+                root /= "Assets";
+                root /= "Engine";
+            }
+        }
+
+        if (filePath.IsRelativeTo(root))
+        {
+            auto rootPathString = AZStd::string_view(root.AsPosix().c_str());
+            if (relativePath.size() > rootPathString.size() + 1)
+            {
+                // add one to account for the 'slash'
+                relativePath = relativePath.substr(rootPathString.size() + 1, relativePath.size() - rootPathString.size());
+            }
+        }
+
+        return relativePath;
+    }
+
     void LUADebuggerComponent::CreateBreakpoint(const AZStd::string& debugName, int lineNumber)
     {
         // register a breakpoint.
 
-        // Debug name will be the full, absolute path, so convert it to the relative path
-        AZStd::string relativePath = debugName;
-        AzToolsFramework::AssetSystemRequestBus::Broadcast(
-            &AzToolsFramework::AssetSystemRequestBus::Events::GetRelativeProductPathFromFullSourceOrProductPath, debugName, relativePath);
+        // Debug name will be the full, absolute path, so convert it to a path relative to the project, gem or engine
+        AZStd::string relativePath = GetRelativePath(debugName);
+        //AzToolsFramework::AssetSystemRequestBus::Broadcast(
+        //    &AzToolsFramework::AssetSystemRequestBus::Events::GetRelativeProductPathFromFullSourceOrProductPath, debugName, relativePath);
         relativePath = "@" + relativePath;
 
         AzFramework::RemoteToolsEndpointInfo targetInfo;
@@ -698,14 +798,17 @@ namespace LUADebugger
         }
     }
 
+
     void LUADebuggerComponent::RemoveBreakpoint(const AZStd::string& debugName, int lineNumber)
     {
         // remove a breakpoint.
 
-        // Debug name will be the full, absolute path, so convert it to the relative path
-        AZStd::string relativePath = debugName;
-        AzToolsFramework::AssetSystemRequestBus::Broadcast(
-            &AzToolsFramework::AssetSystemRequestBus::Events::GetRelativeProductPathFromFullSourceOrProductPath, debugName, relativePath);
+        // Debug name will be the full, absolute path, so convert it to a path relative to the project, gem or engine
+        AZStd::string relativePath = GetRelativePath(debugName);
+        // TODO connect to the asset processor if available to get this info
+        //AzToolsFramework::AssetSystemRequestBus::Broadcast(
+        //    &AzToolsFramework::AssetSystemRequestBus::Events::GetRelativeProductPathFromFullSourceOrProductPath, debugName, relativePath);
+
         relativePath = "@" + relativePath;
 
         AzFramework::RemoteToolsEndpointInfo targetInfo;
