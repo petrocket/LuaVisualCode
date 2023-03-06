@@ -11,6 +11,17 @@
 
 namespace LUADebugger
 {
+    class Platform
+    {
+    public:
+        // TODO implement PAL version
+        bool SupportsWaitForDebugger();
+        void WaitForDebugger();
+        void Printf(const char* format, ...);
+    };
+
+    Platform& GetPlatform();
+
     class LUADebugAdapterApplication final
         : public AzFramework::Application
     {

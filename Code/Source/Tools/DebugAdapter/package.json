@@ -20,6 +20,7 @@
             {
                 "type": "o3de_lua_debugger",
                 "program": "@O3DE_VSCODE_PACKAGE_PROGRAM@",
+                "args": [ "--wait-for-debugger" ],
                 "label": "o3de_lua_debugger",
                 "configurationAttributes": {}
             }

@@ -16,6 +16,34 @@
 
 namespace LUADebugger
 {
+    Platform& GetPlatform()
+    {
+        static Platform s_platform;
+        return s_platform;
+    }
+
+    bool Platform::SupportsWaitForDebugger()
+    {
+        return true;
+    }
+
+    void Platform::WaitForDebugger()
+    {
+        while (!::IsDebuggerPresent()) {}
+    }
+
+    void Platform::Printf(const char* format, ...)
+    {
+        constexpr int MAX_PRINT_MSG = 4096;
+        char message[MAX_PRINT_MSG];
+
+        va_list mark;
+        va_start(mark, format);
+        azvsnprintf(message, MAX_PRINT_MSG, format, mark);
+        va_end(mark);
+        AZ::Debug::Platform::OutputToDebugger({}, message);
+    }
+
     static const char* GetBuildTargetName()
     {
 #if !defined(LY_CMAKE_TARGET)
